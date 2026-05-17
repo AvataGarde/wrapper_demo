@@ -152,7 +152,7 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
                 system_instruction=system_prompt,
                 response_schema=GeminiSchema,
                 tools=[types.Tool(google_search=types.GoogleSearch())],
-                thinking_config=types.ThinkingConfig(include_thoughts=True, thinking_level="medium")
+                thinking_config=types.ThinkingConfig(include_thoughts=True)
             ),
         )
         

@@ -8,4 +8,6 @@ dist/
 build/
 .pytest_cache/
 *.out
+llmaudit/
+docs/
 
