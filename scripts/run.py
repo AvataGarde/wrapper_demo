@@ -3,9 +3,9 @@
 
 Usage examples:
   python scripts/run.py --prompt iran-uk-war-neutral
-  python scripts/run.py --prompt iran-uk-war-neutral --provider perplexity
-  python scripts/run.py --topic uk-elections-2026 --provider perplexity gemini --repeat 6 --export
-  python scripts/run.py --all --provider perplexity gemini --repeat 6 --export
+  python scripts/run.py --prompt uk-elections-2026-neutral --provider gemini
+  python scripts/run.py --topic iran-war-oil --provider perplexity gemini --repeat 3 --export
+  python scripts/run.py --all --provider perplexity  --repeat 3 --export
 """
 import argparse
 import sys
@@ -104,7 +104,8 @@ def main():
     print(f"{'TOTAL':<15} {total_ok:>5} {total_fail:>5} {total_tokens:>10,} {total_cost_str:>10}")
 
     if args.export and saved_paths:
-        excel_path = export_excel(paths=saved_paths)
+        topic = args.topic or ("all" if args.all else args.prompt)
+        excel_path = export_excel(paths=saved_paths, topic=topic, providers=providers)
         print(f"\nExcel exported → {excel_path}")
 
 

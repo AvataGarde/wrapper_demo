@@ -109,14 +109,18 @@ def export_excel(
     date: str | None = None,
     provider: str | None = None,
     out_path: str | None = None,
+    topic: str | None = None,
+    providers: list[str] | None = None,
 ) -> str:
     """Export matching runs to an Excel file (one row per run, no raw field).
 
     Args:
-        paths:    explicit list of JSON file paths to include (overrides other filters)
-        date:     filter by date string e.g. "2026-05-16"
-        provider: filter by provider name
-        out_path: output .xlsx path; defaults to outputs/audit_export_<date>.xlsx
+        paths:     explicit list of JSON file paths to include (overrides other filters)
+        date:      filter by date string e.g. "2026-05-16"
+        provider:  filter by provider name (for list_runs filtering)
+        out_path:  output .xlsx path; auto-generated if not given
+        topic:     topic name to include in the auto-generated filename
+        providers: list of provider names to include in the auto-generated filename
     """
     if paths is None:
         paths = list_runs(date=date, provider=provider)
@@ -128,7 +132,13 @@ def export_excel(
 
     if out_path is None:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        out_path = str(OUTPUTS_DIR / f"audit_export_{today}.xlsx")
+        parts = ["audit_export"]
+        if topic:
+            parts.append(topic)
+        if providers:
+            parts.append("+".join(sorted(providers)))
+        parts.append(today)
+        out_path = str(OUTPUTS_DIR / f"{'_'.join(parts)}.xlsx")
 
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
 
