@@ -3,6 +3,7 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pandas as pd
 
@@ -161,6 +162,170 @@ def export_excel(
         ws.freeze_panes = "A2"
 
     return out_path
+
+
+def save_to_db(response: StandardResponse) -> int | None:
+    """Persist a StandardResponse to PostgreSQL. Returns the run.id or None on failure."""
+    try:
+        from src.db import get_conn  # lazy import so file-only usage still works
+    except ImportError:
+        return None
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                # ── queries (upsert) ──────────────────────────────────────────
+                cur.execute(
+                    """
+                    INSERT INTO queries (id, topic, framing, text)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    (
+                        response.prompt_id,
+                        _topic_from_id(response.prompt_id),
+                        response.framing or "",
+                        response.prompt_text,
+                    ),
+                )
+
+                # ── runs ──────────────────────────────────────────────────────
+                ts = _parse_ts(response.timestamp)
+                cur.execute(
+                    """
+                    INSERT INTO runs
+                        (query_id, provider, model, attempt_no, timestamp,
+                         latency_ms, prompt_tokens, completion_tokens,
+                         total_tokens, total_cost, error)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (query_id, provider, attempt_no) DO UPDATE
+                        SET timestamp=EXCLUDED.timestamp,
+                            latency_ms=EXCLUDED.latency_ms,
+                            total_cost=EXCLUDED.total_cost,
+                            error=EXCLUDED.error
+                    RETURNING id
+                    """,
+                    (
+                        response.prompt_id,
+                        response.provider,
+                        response.model,
+                        response.attempt_no,
+                        ts,
+                        response.latency_ms,
+                        response.usage.prompt_tokens if response.usage else None,
+                        response.usage.completion_tokens if response.usage else None,
+                        response.usage.total_tokens if response.usage else None,
+                        response.usage.total_cost if response.usage else None,
+                        response.error,
+                    ),
+                )
+                run_id: int = cur.fetchone()[0]
+
+                # ── raw_responses ─────────────────────────────────────────────
+                cur.execute(
+                    """
+                    INSERT INTO raw_responses (run_id, payload)
+                    VALUES (%s, %s)
+                    ON CONFLICT (run_id) DO UPDATE SET payload=EXCLUDED.payload
+                    """,
+                    (run_id, json.dumps(response.raw)),
+                )
+
+                # ── answers ───────────────────────────────────────────────────
+                cur.execute(
+                    """
+                    INSERT INTO answers
+                        (run_id, answer, source_selection_justification,
+                         location, copyright_subject_matter, social_media_use,
+                         fair_dealing, licensing)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (run_id) DO UPDATE
+                        SET answer=EXCLUDED.answer,
+                            source_selection_justification=EXCLUDED.source_selection_justification,
+                            location=EXCLUDED.location,
+                            copyright_subject_matter=EXCLUDED.copyright_subject_matter,
+                            social_media_use=EXCLUDED.social_media_use,
+                            fair_dealing=EXCLUDED.fair_dealing,
+                            licensing=EXCLUDED.licensing
+                    """,
+                    (
+                        run_id,
+                        response.answer,
+                        response.source_selection_justification,
+                        response.location,
+                        response.copyright_subject_matter,
+                        response.social_media_use,
+                        response.fair_dealing,
+                        response.licensing,
+                    ),
+                )
+
+                # ── reasoning_steps ───────────────────────────────────────────
+                if response.reasoning_steps:
+                    cur.execute(
+                        "DELETE FROM reasoning_steps WHERE run_id=%s", (run_id,)
+                    )
+                    for i, line in enumerate(response.reasoning_steps.splitlines()):
+                        if line.strip():
+                            cur.execute(
+                                "INSERT INTO reasoning_steps (run_id, step_no, content) VALUES (%s,%s,%s)",
+                                (run_id, i, line.strip()),
+                            )
+
+                # ── citations ─────────────────────────────────────────────────
+                cur.execute("DELETE FROM citations WHERE run_id=%s", (run_id,))
+                for rank, sr in enumerate(response.search_results):
+                    domain = _extract_domain(sr.resolved_url or sr.url)
+                    cur.execute(
+                        """
+                        INSERT INTO citations
+                            (run_id, rank, url, resolved_url, title,
+                             snippet, published_date, domain)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                        """,
+                        (
+                            run_id,
+                            rank,
+                            sr.url,
+                            sr.resolved_url,
+                            sr.title,
+                            sr.snippet,
+                            sr.published_date,
+                            domain,
+                        ),
+                    )
+
+        return run_id
+    except Exception as exc:
+        import traceback
+        print(f"[db] save_to_db failed: {exc}\n{traceback.format_exc()}")
+        return None
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _topic_from_id(prompt_id: str) -> str:
+    """Best-effort: strip the trailing framing suffix to get the topic."""
+    for suffix in ("-neutral", "-left", "-right", "-outlets-national", "-outlets-local"):
+        if prompt_id.endswith(suffix):
+            return prompt_id[: -len(suffix)]
+    return prompt_id
+
+
+def _extract_domain(url: str | None) -> str | None:
+    if not url:
+        return None
+    try:
+        return urlparse(url).netloc.removeprefix("www.")
+    except Exception:
+        return None
+
+
+def _parse_ts(ts: str):
+    try:
+        return datetime.fromisoformat(ts)
+    except Exception:
+        return datetime.now(timezone.utc)
 
 
 def next_attempt_no(prompt_id: str, provider: str) -> int:
