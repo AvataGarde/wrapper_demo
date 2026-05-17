@@ -61,7 +61,7 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
                 },
             },
         }
-        web_search_options = {"search_type": "pro"}
+        web_search_options = {"search_type": "pro", "max_results": 15}
         reasoning_effort = "medium"
 
         t0 = time.perf_counter()
@@ -143,10 +143,21 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
         reasoning_steps = "\n\n".join(thoughts) if thoughts else None
 
         # --- search_results ---
+        all_results_raw: list[dict] = list(search_results_raw)
+        for step in raw_steps:
+            ws = step.get("web_search") or {}
+            for sr in ws.get("search_results") or []:
+                all_results_raw.append(sr)
+
+        seen_urls: set[str] = set()
         search_results: list[Search_Result] = []
-        for sr in search_results_raw:
+        for sr in all_results_raw:
+            url = sr.get("url", "")
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             search_results.append(Search_Result(
-                url=sr.get("url", ""),
+                url=url,
                 title=sr.get("title"),
                 snippet=sr.get("snippet"),
                 published_date=sr.get("date"),
