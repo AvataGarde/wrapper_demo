@@ -4,8 +4,8 @@
 Usage examples:
   python scripts/run.py --prompt iran-uk-war-neutral
   python scripts/run.py --prompt uk-elections-2026-neutral --provider perplexity
-  python scripts/run.py --topic uk-elections-2026 --provider gemini --repeat 6 --export
-  python scripts/run.py --all --provider perplexity  --repeat 3 --export
+  python scripts/run.py --topic uk-elections-2026 --provider gemini --repeat 3 --export
+  python scripts/run.py --all --provider perplexity --repeat 3 --export
 """
 import argparse
 import sys
@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.prompts import load_prompts, filter_prompts, get_prompt
 from src.wrapper import PROVIDERS, run_one
-from src.storage import save, next_attempt_no, export_excel
+from src.storage import export_excel, next_attempt_no, save_with_optional_db
 
 
 def main():
@@ -60,17 +60,18 @@ def main():
                 print(f"[{idx}/{total}] {prompt['id']} × {provider} ... ", end="", flush=True) # print progress
 
                 result = run_one(prompt, provider, attempt_no=attempt_no) # run the prompt with the provider
-                path = save(result) # save the result
+                path, run_id = save_with_optional_db(result) # save the result (and DB if configured)
                 saved_paths.append(path)
 
+                db_suffix = f" [db run_id={run_id}]" if run_id is not None else ""
                 if result.error:
                     stats[provider]["fail"] += 1
-                    print(f"FAIL ({result.error[:80]})")
+                    print(f"FAIL ({result.error[:80]}) -> {path}{db_suffix}")
                 else:
                     stats[provider]["ok"] += 1 # increment ok count for this provider
                     latency = f"{result.latency_ms / 1000:.1f}s" if result.latency_ms else "?s"
                     ncit = len(result.search_results)
-                    print(f"OK ({latency}, {ncit} sources) -> {path}")
+                    print(f"OK ({latency}, {ncit} sources) -> {path}{db_suffix}")
                 if result.usage:
                     stats[provider]["tokens"] += result.usage.total_tokens or 0
                     if result.usage.total_cost is not None and result.usage.total_cost > 0:

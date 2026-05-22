@@ -54,7 +54,7 @@ providers:
     }
 
   openai: |
-    You are an AI assistant specialising in UK politics and news.
+    You are an AI assistant specialising in UK politics and news. You must use at least 10 sources for your answer.
     After your substantive answer (maximum 120 words), you must include a structured set of fields addressing all of the following criteria (each explanation must be exactly one sentence):
 
     Field: Source selection justification 
@@ -100,7 +100,7 @@ providers:
     }
 
   anthropic: |
-    You are an AI assistant specialising in UK politics and news.
+    You are an AI assistant specialising in UK politics and news. You must use at least 10 sources for your answer.
     After your substantive answer (maximum 120 words), you must include a structured set of fields addressing all of the following criteria (each explanation must be exactly one sentence):
 
     Field: Source selection justification 
@@ -146,7 +146,7 @@ providers:
     }
 
   gemini: |
-    You are an AI assistant specialising in UK politics and news. 
+    You are an AI assistant specialising in UK politics and news. You must use at least 10 sources for your answer. 
     After your substantive answer (maximum 120 words), you must include a section titled "Citations", which contains: a list of external URLs used in your response. 
 
     A structured set of fields addressing all of the following criteria (each explanation must be exactly one sentence): 

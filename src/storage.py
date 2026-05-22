@@ -3,12 +3,254 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-import pandas as pd
-
+from src.db import get_conn, init_db, is_database_configured
 from src.schema import StandardResponse
 
 OUTPUTS_DIR = Path(__file__).parent.parent / "outputs"
+DB_ENABLED_ENV = "FALSE"
+DB_SCHEMA_INITIALIZED = False
+
+
+STRUCTURED_ANSWER_FIELDS = (
+    "answer",
+    "source_selection_justification",
+    "location",
+    "copyright_subject_matter",
+    "social_media_use",
+    "fair_dealing",
+    "licensing",
+)
+
+
+RUN_FIELD_ORDER = (
+    "query_id",
+    "provider",
+    "model",
+    "attempt_no",
+    "timestamp",
+    "latency_ms",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_cost",
+    "error",
+)
+
+
+QUERY_FIELD_ORDER = ("id", "topic", "framing", "text")
+
+
+CITATION_FIELD_ORDER = (
+    "rank",
+    "url",
+    "resolved_url",
+    "title",
+    "snippet",
+    "published_date",
+)
+
+
+DEFAULT_SAVE_MODE = "file"  # set to "both" to re-enable DB saving
+
+
+def _import_pandas():
+    import pandas as pd
+
+    return pd
+
+
+def _normalize_timestamp(timestamp: str) -> str:
+    if not timestamp:
+        return datetime.now(timezone.utc).isoformat()
+    if timestamp.endswith("Z"):
+        return timestamp[:-1] + "+00:00"
+    return timestamp
+
+
+def _split_reasoning_steps(reasoning_steps: str | None) -> list[dict[str, Any]]:
+    if not reasoning_steps:
+        return []
+    parts = [part.strip() for part in re.split(r"\n\s*\n", reasoning_steps) if part.strip()]
+    if len(parts) <= 1:
+        parts = [line.strip() for line in reasoning_steps.splitlines() if line.strip()]
+    return [{"step_no": idx, "content": part} for idx, part in enumerate(parts, start=1)]
+
+
+def build_db_records(response: StandardResponse) -> dict[str, Any]:
+    query = {
+        "id": response.prompt_id,
+        "topic": response.prompt_id.rsplit("-", 1)[0],
+        "framing": response.framing or "unknown",
+        "text": response.prompt_text,
+    }
+    run = {
+        "query_id": response.prompt_id,
+        "provider": response.provider,
+        "model": response.model,
+        "attempt_no": response.attempt_no,
+        "timestamp": _normalize_timestamp(response.timestamp),
+        "latency_ms": response.latency_ms,
+        "prompt_tokens": response.usage.prompt_tokens if response.usage else None,
+        "completion_tokens": response.usage.completion_tokens if response.usage else None,
+        "total_cost": response.usage.total_cost if response.usage else None,
+        "error": response.error,
+    }
+    answer = {field: getattr(response, field) for field in STRUCTURED_ANSWER_FIELDS}
+    citations = [
+        {
+            "rank": idx,
+            "url": sr.url,
+            "resolved_url": sr.resolved_url,
+            "title": sr.title,
+            "snippet": sr.snippet,
+            "published_date": sr.published_date,
+        }
+        for idx, sr in enumerate(response.search_results, start=1)
+    ]
+    return {
+        "query": query,
+        "run": run,
+        "answer": answer,
+        "reasoning_steps": _split_reasoning_steps(response.reasoning_steps),
+        "citations": citations,
+        "raw_response": response.raw,
+    }
+
+
+def _ensure_db_schema(conn) -> None:
+    global DB_SCHEMA_INITIALIZED
+    if not DB_SCHEMA_INITIALIZED:
+        init_db(conn=conn)
+        DB_SCHEMA_INITIALIZED = True
+
+
+def save_to_db(response: StandardResponse, conn=None) -> int:
+    records = build_db_records(response)
+    owns_conn = conn is None
+    connection = conn or get_conn()
+    try:
+        _ensure_db_schema(connection)
+        with connection.cursor() as cur:
+            query = records["query"]
+            cur.execute(
+                """
+                INSERT INTO queries (id, topic, framing, text)
+                VALUES (%(id)s, %(topic)s, %(framing)s, %(text)s)
+                ON CONFLICT (id) DO UPDATE
+                SET topic = EXCLUDED.topic,
+                    framing = EXCLUDED.framing,
+                    text = EXCLUDED.text
+                """,
+                query,
+            )
+
+            run_payload = records["run"]
+            cur.execute(
+                """
+                INSERT INTO runs (
+                    query_id, provider, model, attempt_no, timestamp,
+                    latency_ms, prompt_tokens, completion_tokens, total_cost, error
+                )
+                VALUES (
+                    %(query_id)s, %(provider)s, %(model)s, %(attempt_no)s, %(timestamp)s,
+                    %(latency_ms)s, %(prompt_tokens)s, %(completion_tokens)s, %(total_cost)s, %(error)s
+                )
+                ON CONFLICT (query_id, provider, attempt_no) DO UPDATE
+                SET model = EXCLUDED.model,
+                    timestamp = EXCLUDED.timestamp,
+                    latency_ms = EXCLUDED.latency_ms,
+                    prompt_tokens = EXCLUDED.prompt_tokens,
+                    completion_tokens = EXCLUDED.completion_tokens,
+                    total_cost = EXCLUDED.total_cost,
+                    error = EXCLUDED.error
+                RETURNING id
+                """,
+                run_payload,
+            )
+            run_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO raw_responses (run_id, payload)
+                VALUES (%s, %s::jsonb)
+                ON CONFLICT (run_id) DO UPDATE
+                SET payload = EXCLUDED.payload
+                """,
+                (run_id, json.dumps(records["raw_response"] or {})),
+            )
+
+            answer_payload = dict(records["answer"])
+            answer_payload["run_id"] = run_id
+            cur.execute(
+                """
+                INSERT INTO answers (
+                    run_id, answer, source_selection_justification, location,
+                    copyright_subject_matter, social_media_use, fair_dealing, licensing
+                )
+                VALUES (
+                    %(run_id)s, %(answer)s, %(source_selection_justification)s, %(location)s,
+                    %(copyright_subject_matter)s, %(social_media_use)s, %(fair_dealing)s, %(licensing)s
+                )
+                ON CONFLICT (run_id) DO UPDATE
+                SET answer = EXCLUDED.answer,
+                    source_selection_justification = EXCLUDED.source_selection_justification,
+                    location = EXCLUDED.location,
+                    copyright_subject_matter = EXCLUDED.copyright_subject_matter,
+                    social_media_use = EXCLUDED.social_media_use,
+                    fair_dealing = EXCLUDED.fair_dealing,
+                    licensing = EXCLUDED.licensing
+                """,
+                answer_payload,
+            )
+
+            cur.execute("DELETE FROM reasoning_steps WHERE run_id = %s", (run_id,))
+            for step in records["reasoning_steps"]:
+                cur.execute(
+                    "INSERT INTO reasoning_steps (run_id, step_no, content) VALUES (%s, %s, %s)",
+                    (run_id, step["step_no"], step["content"]),
+                )
+
+            cur.execute("DELETE FROM citations WHERE run_id = %s", (run_id,))
+            for citation in records["citations"]:
+                cur.execute(
+                    """
+                    INSERT INTO citations (run_id, url, resolved_url, title, snippet, published_date, rank)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        run_id,
+                        citation["url"],
+                        citation["resolved_url"],
+                        citation["title"],
+                        citation["snippet"],
+                        citation["published_date"],
+                        citation["rank"],
+                    ),
+                )
+        connection.commit()
+        return run_id
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        if owns_conn:
+            connection.close()
+
+
+def _db_mode_enabled() -> bool:
+    import os
+
+    mode = os.environ.get(DB_ENABLED_ENV, DEFAULT_SAVE_MODE).strip().lower()
+    if mode in {"0", "false", "off", "file", "files"}:
+        return False
+    return is_database_configured()
+
+
+def save_with_optional_db(response: StandardResponse) -> tuple[str, int | None]:
+    path = save(response)
+    run_id = save_to_db(response) if _db_mode_enabled() else None
+    return path, run_id
 
 
 def _date_dir(response: StandardResponse) -> Path:
@@ -128,6 +370,7 @@ def export_excel(
         raise ValueError("No runs found matching the given filters.")
 
     rows = [_to_row(load(p)) for p in paths]
+    pd = _import_pandas()
     df = pd.DataFrame(rows)
 
     if out_path is None:

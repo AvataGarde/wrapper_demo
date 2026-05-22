@@ -13,11 +13,13 @@ wrapper_demo/
 ├── prompts.yaml                # 75 prompts: 15 topics × 5 framings
 ├── system_prompts.yaml         # Per-provider system prompts (JSON output format)
 │
+├── schema.sql                  # PostgreSQL schema for Layer 1 storage
 ├── src/
+│   ├── db.py                   # PostgreSQL connection helpers + schema init
 │   ├── schema.py               # Pydantic models: StandardResponse, Search_Result, Usage
 │   ├── prompts.py              # load_prompts(), filter_prompts(), load_system_prompt()
 │   ├── wrapper.py              # PROVIDERS registry + run_one() dispatcher
-│   ├── storage.py              # save/load JSON runs, export_excel()
+│   ├── storage.py              # save/load JSON runs, DB persistence, export_excel()
 │   └── providers/
 │       ├── perplexity_p.py     # Perplexity SDK (sonar / sonar-pro, streaming)
 │       ├── openai_p.py         # OpenAI Responses API (web_search_preview tool)
@@ -47,6 +49,11 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env and fill in:
 #   OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, PERPLEXITY_API_KEY
+#
+# 4. Optional: enable PostgreSQL Layer 1 storage
+#   DATABASE_URL=postgresql://user:pass@host:5432/dbname
+#   # or PGHOST / PGPORT / PGUSER / PGPASSWORD / PGDATABASE
+#   ENABLE_DB_SAVE=both   # both (default when DB configured) | file | off
 ```
 
 ## Running
@@ -66,6 +73,9 @@ python scripts/run.py --topic uk-elections-2026 --provider perplexity gemini --r
 
 # Run everything (75 prompts × 2 providers)
 python scripts/run.py --all --provider perplexity gemini --repeat 6 --export
+
+# Migrate existing JSON outputs into PostgreSQL
+python scripts/migrate.py
 ```
 
 ### CLI flags
@@ -125,6 +135,27 @@ Each JSON file is a `StandardResponse` (see `src/schema.py`):
 ## Excel export
 
 The `--export` flag (or `export_excel()` in `storage.py`) writes one row per run to `outputs/audit_export_YYYY-MM-DD.xlsx`, with all fields except `raw`. Columns are auto-sized and the header row is frozen for easy scrolling.
+
+## PostgreSQL Layer 1
+
+When PostgreSQL is configured (`DATABASE_URL` or `PG*` variables), `scripts/run.py` now writes every run to both flat files and the relational schema in `schema.sql`.
+
+### Schema objects
+- `queries`
+- `runs`
+- `raw_responses`
+- `answers`
+- `reasoning_steps`
+- `citations`
+- `source_metrics`
+
+### Initialize + migrate existing demo files
+
+```bash
+python scripts/migrate.py
+```
+
+This creates the schema if needed, then ingests every `outputs/**/*.json` file (or a filtered subset via `--date` / `--provider`).
 
 ## Verify install
 

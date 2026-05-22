@@ -61,7 +61,7 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
                 },
             },
         }
-        web_search_options = {"search_type": "pro", "max_results": 15}
+        web_search_options = {"search_type": "pro", "max_results": 10}
         reasoning_effort = "medium"
 
         t0 = time.perf_counter()
