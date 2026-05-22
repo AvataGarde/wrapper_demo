@@ -1,13 +1,15 @@
 """Anthropic adapter — Messages API with web_search tool."""
-from __future__ import annotations
+import base64
 import re
 import time
 import os
+import re
+import json
 from dotenv import load_dotenv
 import anthropic
 from pydantic import BaseModel
 
-from src.schema import Search_Result, Usage, StandardResponse
+from src.schema import Search_Result, Usage, StandardResponse, normalize_url
 from src.prompts import load_system_prompt
 
 load_dotenv()
@@ -19,7 +21,7 @@ MODEL = "claude-opus-4-5"  # override via ANTHROPIC_MODEL env var
 class AnthropicSchema(BaseModel):
     query: str = ""
     answer: str = ""
-    url_list: list[str] = []
+    #url_list: list[str] = []
     source_selection_justification: str = ""
     location: str = ""
     copyright_subject_matter: str = ""
@@ -77,7 +79,62 @@ def _serialize_content_block(block) -> dict:
         return block.model_dump()
     return vars(block) if hasattr(block, "__dict__") else str(block)
 
+def _build_search_index(response_content) -> list[list[dict]]:
+    search_results_by_call: list[list[dict]] = []
+    
+    for block in response_content:
+        btype = getattr(block, "type", None)
+        
+        if btype == "server_tool_use":
+            search_results_by_call.append([])
+        
+        elif btype == "web_search_tool_result":
 
+            items = getattr(block, "content", None) or []
+            if search_results_by_call:
+                for item in items:
+                    url = getattr(item, "url", None)
+                    title = getattr(item, "title", None)
+                    page_age = getattr(item, "page_age", None)
+                    if url:
+                        search_results_by_call[-1].append({
+                            "url": url,
+                            "title": title,
+                            "page_age": page_age,
+                        })
+    
+    return search_results_by_call
+
+
+_CITE_URL_PATTERN = re.compile(
+    r'<cite\s+url\s*=\s*\\?"([^"\\]+)\\?"',
+    re.IGNORECASE,
+)
+
+def _extract_cited_by_url(
+    answer_text: str,
+    searched_sources: list[Search_Result],
+) -> tuple[list[Search_Result], list[str]]:
+    url_to_sr = {sr.url: sr for sr in searched_sources}
+    cited: list[Search_Result] = []
+    hallucinated: list[str] = []
+    seen: set[str] = set()
+    
+    for m in _CITE_URL_PATTERN.finditer(answer_text):
+        url_str = m.group(1)
+        for url in url_str.split(","):
+            url = normalize_url(url.strip())
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            if url in url_to_sr:
+                cited.append(url_to_sr[url])
+            else:
+                hallucinated.append(url)
+    
+    return cited, hallucinated
+
+    
 def _split_response(text: str) -> tuple[str, AnthropicSchema | None]:
     """Split model output into (answer_prose, structured). Returns (full_text, None) on failure."""
     text = text.strip()
@@ -127,7 +184,7 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
         
         response = client.messages.create(
             model=model,
-            max_tokens=2048,
+            max_tokens=4096,
             system=system_prompt,
             messages=[{"role": "user", "content": prompt["text"]}],
             tools=[
@@ -139,7 +196,7 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
             ],
         )
         latency_ms = int((time.perf_counter() - t0) * 1000)
-
+        
         raw: dict = {
             "id": response.id,
             "type": response.type,
@@ -151,52 +208,31 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
             "content": [_serialize_content_block(b) for b in response.content],
         }
 
+        search_index = _build_search_index(response.content)
+        
         # --- Collect text and native citations from content blocks ---
         text_parts: list[str] = []
-        seen_urls: set[str] = set()
-        search_results: list[Search_Result] = []
-
+        searched_sources: list[Search_Result] = []
+        searched_seen: set[str] = set()
+        for call_results in search_index:
+            for item in call_results:
+                url = item["url"]
+                if not url:
+                    continue
+                norm = normalize_url(url)
+                if norm in searched_seen:
+                    continue
+                searched_seen.add(norm)
+                searched_sources.append(Search_Result(
+                        url=url,
+                        title=item["title"],
+                        published_date=item["page_age"],
+                    ))
         for block in response.content:
-            block_type = getattr(block, "type", None)
-
-            if block_type == "text":
+            if getattr(block, "type", None) == "text":
                 text_parts.append(getattr(block, "text", "") or "")
-
-                # cited_text is Anthropic's unique signal — store as snippet
-                for cit in getattr(block, "citations", None) or []:
-                    if getattr(cit, "type", None) == "web_search_result_location":
-                        url = getattr(cit, "url", "") or ""
-                        if url and url not in seen_urls:
-                            seen_urls.add(url)
-                            meta_title, meta_date = _fetch_page_meta(url) if url else (None, None)
-                            
-                            final_title = getattr(cit, "title", None) or meta_title
-                            if final_title is not None:
-                                search_results.append(Search_Result(
-                                    url=url,
-                                    title=final_title,
-                                    snippet=getattr(cit, "cited_text", None),
-                                    published_date=meta_date
-                                ))
-
-            elif block_type == "tool_result":
-                for item in getattr(block, "content", None) or []:
-                    if isinstance(item, dict):
-                        url = item.get("url", "")
-                        if url and url not in seen_urls:
-                            seen_urls.add(url)
-                            meta_title, meta_date = _fetch_page_meta(url) if url else (None, None)
-                            
-                            final_title = item.get("title") or meta_title
-                            if final_title is not None:
-                                search_results.append(Search_Result(
-                                    url=url,
-                                    title=final_title,
-                                    snippet=item.get("snippet"),
-                                    published_date=meta_date
-                                ))
-
         full_text = "\n".join(text_parts).strip()
+
 
         # --- Parse structured JSON from assembled text ---
         answer, structured = _split_response(full_text)
@@ -204,14 +240,13 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
             base.update(structured.model_dump(exclude={"query", "answer"}))
         base["answer"] = answer or full_text
         base["reasoning_steps"] = raw.get("reasoning_steps")
-
-        import re
+        
         # Replace triple backtick JSON code blocks around the answer if present
         fence = re.search(r"```json\s*(\{.*?\})\s*```", base["answer"], re.DOTALL)
         if fence:
             base["answer"] = fence.group(1).strip()
 
-        import json
+        
         try:
             parsed_answer = json.loads(base["answer"])
             # if parse succeeds and has 'answer' field, we unpack it
@@ -220,33 +255,8 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
                 base["answer"] = parsed_answer["answer"]
         except Exception:
             pass
-
-        # --- Fallback: Extract any remaining URLs via Regex from the answer text ---
-        import re
-        # Search the raw output to get all citations and links properly mapped
-        found_urls = re.findall(r'(https?://[^\s)\]"\'`]+)', str(raw))
-        for url in found_urls:
-            if url and url not in seen_urls:
-                seen_urls.add(url)
-                meta_title, meta_date = _fetch_page_meta(url)
-                search_results.append(Search_Result(
-                    url=url,
-                    title=meta_title,
-                    published_date=meta_date
-                ))
-
-        # Add any url_list entries not already captured natively
-        if structured:
-            for url in structured.url_list:
-                if url and url not in seen_urls:
-                    seen_urls.add(url)
-                    meta_title, meta_date = _fetch_page_meta(url)
-                    search_results.append(Search_Result(
-                        url=url,
-                        title=meta_title,
-                        published_date=meta_date
-                    ))
-
+        
+        cited_sources, hallucinated_urls = _extract_cited_by_url(full_text, searched_sources)
         # --- Usage ---
         raw_usage = raw.get("usage", {}) or {}
         usage = Usage(
@@ -255,10 +265,10 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
             total_tokens=(raw_usage.get("input_tokens", 0) + raw_usage.get("output_tokens", 0)),
             total_cost=0.0,
         )
-
         return StandardResponse(
             **base,
-            search_results=search_results,
+            cited_sources=cited_sources,
+            searched_sources=searched_sources,
             usage=usage,
             latency_ms=latency_ms,
             raw=raw,

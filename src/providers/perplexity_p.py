@@ -1,6 +1,7 @@
 from __future__ import annotations
 import time
 import os
+import re
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
@@ -30,6 +31,28 @@ class PerplexitySchema(BaseModel):
     fair_dealing: str
     licensing: str
 
+def _extract_cited_indices(answer_text: str) -> list[int]:
+    """Extract 1-indexed citation numbers from Perplexity answer text.
+    
+    Matches: [1], [2], [1][2][3], [1, 3], etc.
+    Returns: unique indices in order of first appearance.
+    """
+    # \[(\d+)\] matches [N] where N is one or more digits
+    # Also handle [1,2] / [1, 2] / [1-3]
+    matches = re.findall(r"\[(\d+(?:\s*[,\-]\s*\d+)*)\]", answer_text)
+    indices: list[int] = []
+    seen: set[int] = set()
+    for m in matches:
+        # m might be "1" or "1,2" or "1-3"
+        for part in re.split(r"[,\-]\s*", m):
+            try:
+                n = int(part.strip())
+                if n not in seen:
+                    seen.add(n)
+                    indices.append(n)
+            except ValueError:
+                continue
+    return indices
 
 def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
     model = os.environ.get("PERPLEXITY_MODEL", MODEL)
@@ -99,6 +122,7 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
                     search_results_raw = d["search_results"]
                 if d.get("usage"):
                     usage_raw = d["usage"]
+                
 
             content = "".join(content_parts)
             raw = {
@@ -149,20 +173,33 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
             for sr in ws.get("search_results") or []:
                 all_results_raw.append(sr)
 
-        seen_urls: set[str] = set()
-        search_results: list[Search_Result] = []
+        searched_seen: set[str] = set()
+        searched_sources: list[Search_Result] = []
         for sr in all_results_raw:
             url = sr.get("url", "")
-            if not url or url in seen_urls:
+            if not url or url in searched_seen:
                 continue
-            seen_urls.add(url)
-            search_results.append(Search_Result(
+            searched_seen.add(url)
+            searched_sources.append(Search_Result(
                 url=url,
                 title=sr.get("title"),
                 snippet=sr.get("snippet"),
                 published_date=sr.get("date"),
             ))
+        
+        # extract cited indices
+        citation_indices = _extract_cited_indices(structured.answer)
 
+        # extract cited sources by indices
+        cited_sources: list[Search_Result] = []
+        seen: set[int] = set()
+        for idx in citation_indices:
+            if 1 <= idx <= len(searched_sources):
+                source = searched_sources[idx - 1]
+                if idx not in seen:
+                    cited_sources.append(source)
+                    seen.add(idx)
+        
         # --- Usage ---
         cost_raw = (usage_raw.get("cost") or {}) if isinstance(usage_raw, dict) else {}
         usage = Usage(
@@ -175,7 +212,8 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
         return StandardResponse(
             **base,
             reasoning_steps=reasoning_steps,
-            search_results=search_results,
+            cited_sources=cited_sources,
+            searched_sources=searched_sources,
             usage=usage,
             latency_ms=latency_ms,
             raw=raw,

@@ -9,7 +9,7 @@
 providers:
   perplexity: |
     You are an AI assistant specialising in UK politics and news.
-    After your substantive answer (maximum 120 words), you must include a structured set of fields addressing all of the following criteria (each explanation must be exactly one sentence):
+    After your substantive answer (maximum 150 words), you must include a structured set of fields addressing all of the following criteria (each explanation must be exactly one sentence):
 
     Field: Source selection justification 
     Explain in one sentence why you selected the particular sources used (e.g. reliability, expertise, proximity to the issue, or relevance to the query). 
@@ -55,7 +55,7 @@ providers:
 
   openai: |
     You are an AI assistant specialising in UK politics and news. You must use at least 10 sources for your answer.
-    After your substantive answer (maximum 120 words), you must include a structured set of fields addressing all of the following criteria (each explanation must be exactly one sentence):
+    After your substantive answer (maximum 150 words), you must include a structured set of fields addressing all of the following criteria (each explanation must be exactly one sentence):
 
     Field: Source selection justification 
     Explain in one sentence why you selected the particular sources used (e.g. reliability, expertise, proximity to the issue, or relevance to the query). 
@@ -101,7 +101,7 @@ providers:
 
   anthropic: |
     You are an AI assistant specialising in UK politics and news. You must use at least 10 sources for your answer.
-    After your substantive answer (maximum 120 words), you must include a structured set of fields addressing all of the following criteria (each explanation must be exactly one sentence):
+    After your substantive answer (maximum 150 words), you must include a structured set of fields addressing all of the following criteria (each explanation must be exactly one sentence):
 
     Field: Source selection justification 
     Explain in one sentence why you selected the particular sources used (e.g. reliability, expertise, proximity to the issue, or relevance to the query). 
@@ -127,6 +127,24 @@ providers:
     Identify in one sentence any visible copyright or licensing signals for the cited sources (for example © notices, Creative Commons licences, paywalls, subscription markers, or explicit partnership/licensing statements). 
     Example: “The Guardian article displays a © notice and no open licence, the BBC page shows © BBC, and an OpenDemocracy piece carries a Creative Commons licence badge indicating more permissive reuse.” 
     
+    CITATION FORMAT:
+    For every factual claim derived from your web searches, wrap the claim with 
+    an inline <cite> tag containing the source URL exactly as it appeared in 
+    your search results:
+
+      <cite url="https://example.com/article">your claim here</cite>
+
+    If a claim is supported by multiple sources, separate URLs with commas:
+
+      <cite url="https://a.com/x,https://b.com/y">claim supported by both</cite>
+
+    Rules:
+    - Only cite URLs that actually appeared in your search results
+    - Do NOT invent URLs
+    - Do NOT use index-based references like <cite index="1-2">
+    - Every factual claim should carry a citation
+    - Citations go inside the "answer" field of your JSON response
+    
     Important requirements:
     - Each field must contain exactly one sentence.
     - Do not omit any of the above fields.
@@ -147,7 +165,6 @@ providers:
 
   gemini: |
     You are an AI assistant specialising in UK politics and news. You must use at least 10 sources for your answer. 
-    After your substantive answer (maximum 120 words), you must include a section titled "Citations", which contains: a list of external URLs used in your response. 
 
     A structured set of fields addressing all of the following criteria (each explanation must be exactly one sentence): 
     Field: Source selection justification 
@@ -185,7 +202,6 @@ providers:
     {
       "query": "the query sent to you",
       "answer": "your answer",
-      "citations": [list of urls for the sources],
       "source_selection_justification": "Source selection justification",
       "location": "UK local/regional/community representation",
       "copyright_subject_matter": "copyright subject matter information as described above",

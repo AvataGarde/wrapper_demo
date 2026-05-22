@@ -7,17 +7,16 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel
 
-from src.schema import Search_Result, Usage, StandardResponse
+from src.schema import Search_Result, Usage, StandardResponse, normalize_url
 from src.prompts import load_system_prompt
 
 load_dotenv()
 
-MODEL = "gpt-4o-search-preview"  # override via OPENAI_MODEL env var
+MODEL = "gpt-5.4"  # override via OPENAI_MODEL env var
 
 class OpenAISchema(BaseModel):
     query: str = ""
     answer: str = ""
-    url_list: list[str] = []
     source_selection_justification: str = ""
     location: str = ""
     copyright_subject_matter: str = ""
@@ -115,11 +114,8 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
         t0 = time.perf_counter()
         response = client.responses.create(
             model=model,
-            tools=[
-                {
-                    "type": "web_search_preview",
-                }
-            ],
+            tools=[{"type": "web_search","search_context_size": "low"}],
+            include=["web_search_call.action.sources"],
             input=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt["text"]}
@@ -137,7 +133,7 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
         base["answer"] = answer or full_text
         base["reasoning_steps"] = raw.get("reasoning_steps")
 
-        # Replace triple backtick JSON code blocks around the answer if present
+        # remove ```json``` fence and unwrap nested answer
         if base["answer"].startswith("```json"):
             base["answer"] = base["answer"].replace("```json\n", "", 1).rstrip("`").strip()
 
@@ -152,51 +148,44 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
             pass
 
         # --- Build search_results from annotation URLs ---
-        seen_urls: set[str] = set()
-        search_results: list[Search_Result] = []
+        searched_seen: set[str] = set()
+        searched_sources: list[Search_Result] = []
 
         for item in response.output:
-            if hasattr(item, "content"):
-                for content_block in item.content:
-                    for ann in getattr(content_block, "annotations", None) or []:
-                        if getattr(ann, "type", None) == "url_citation":
-                            url = getattr(ann, "url", "") or ""
-                            if url and url not in seen_urls:
-                                seen_urls.add(url)
-                                meta_title, meta_date = _fetch_page_meta(url) if url else (None, None)
-                                
-                                final_title = getattr(ann, "title", None) or meta_title
-                                if final_title is not None:
-                                    search_results.append(Search_Result(
-                                        url=url,
-                                        title=final_title,
-                                        published_date=meta_date
-                                    ))
+            if getattr(item, "type", None) != "web_search_call":
+                continue
+            action = getattr(item, "action", None)
+            sources = getattr(action, "sources", None) or []
+            for src in sources:
+                url = getattr(src, "url", None) or (src.get("url") if isinstance(src, dict) else None)
+                if not url:
+                    continue
+                norm = normalize_url(url)
+                if norm in searched_seen:
+                    continue
+                searched_seen.add(norm)
+                title = getattr(src, "title", None) or (src.get("title") if isinstance(src, dict) else None)
+                searched_sources.append(Search_Result(url=url, title=title))
 
-        # Add any url_list entries not already captured by native annotations
-        if structured:
-            for url in structured.url_list:
-                if url and url not in seen_urls:
-                    seen_urls.add(url)
-                    meta_title, meta_date = _fetch_page_meta(url)
-                    if meta_title is not None:
-                        search_results.append(Search_Result(
-                            url=url,
-                            title=meta_title,
-                            published_date=meta_date
-                        ))
+        # --- cited_sources: from message.content[*].annotations[url_citation] ---
+        cited_seen: set[str] = set()
+        cited_sources: list[Search_Result] = []
 
-        # --- Fallback: Extract any remaining URLs via Regex from the raw output ---
-        found_urls = re.findall(r'(https?://[^\s)\]"\'`]+)', str(raw))
-        for url in found_urls:
-            if url and url not in seen_urls:
-                seen_urls.add(url)
-                meta_title, meta_date = _fetch_page_meta(url)
-                search_results.append(Search_Result(
-                    url=url,
-                    title=meta_title,
-                    published_date=meta_date
-                ))
+        for item in response.output:
+            if getattr(item, "type", None) != "message":
+                continue
+            for content_block in getattr(item, "content", None) or []:
+                for ann in getattr(content_block, "annotations", None) or []:
+                    if getattr(ann, "type", None) != "url_citation":
+                        continue
+                    url = normalize_url(getattr(ann, "url", "") or "")
+                    if not url or url in cited_seen:
+                        continue
+                    cited_seen.add(url)
+                    cited_sources.append(Search_Result(
+                        url=url,
+                        title=getattr(ann, "title", None),
+                    ))
 
         # --- Usage ---
         raw_usage = raw.get("usage", {}) or {}
@@ -209,7 +198,8 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
 
         return StandardResponse(
             **base,
-            search_results=search_results,
+            cited_sources=cited_sources,
+            searched_sources=searched_sources,
             usage=usage,
             latency_ms=latency_ms,
             raw=raw,

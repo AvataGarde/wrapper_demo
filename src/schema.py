@@ -2,6 +2,33 @@ from __future__ import annotations
 from pydantic import BaseModel
 from typing import Any
 from datetime import datetime, timezone
+from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
+
+
+_TRACKING_PARAMS = {
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "fbclid", "gclid", "ref", "ref_src", "ref_url",
+    "source", "share", "_unique_id",
+}
+
+def normalize_url(url: str) -> str:
+    try:
+        p = urlparse(url)
+    except Exception:
+        return url
+    
+    # 1. lowercase scheme + netloc
+    scheme = p.scheme.lower() or "https"
+    netloc = p.netloc.lower()
+    
+    # 2. remove tracking query params
+    params = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True)
+              if k.lower() not in _TRACKING_PARAMS]
+    query = urlencode(params)
+    # 3. remove trailing slash (unless the whole path is "/")
+    path = p.path.rstrip("/") if p.path != "/" else "/"
+    # 4. fragment usually doesn't matter for content, drop it
+    return urlunparse((scheme, netloc, path, p.params, query, ""))
 
 
 class Search_Result(BaseModel):
@@ -35,7 +62,9 @@ class StandardResponse(BaseModel):
     social_media_use: str | None = None
     fair_dealing: str | None = None
     licensing: str | None = None
-    search_results: list[Search_Result] = []
+    cited_sources: list[Search_Result] = [] # same as search_results, but only sources that were cited
+    searched_sources: list[Search_Result] = [] # all sources that were searched
+    
 
     # Optional
     reasoning_steps: str | None = None

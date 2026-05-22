@@ -3,7 +3,7 @@
 
 Usage examples:
   python scripts/run.py --prompt iran-uk-war-neutral
-  python scripts/run.py --prompt uk-elections-2026-neutral --provider perplexity
+  python scripts/run.py --prompt uk-elections-2026-left --provider perplexity openai gemini anthropic
   python scripts/run.py --topic uk-elections-2026 --provider gemini --repeat 3 --export
   python scripts/run.py --all --provider perplexity --repeat 3 --export
 """
@@ -70,7 +70,7 @@ def main():
                 else:
                     stats[provider]["ok"] += 1 # increment ok count for this provider
                     latency = f"{result.latency_ms / 1000:.1f}s" if result.latency_ms else "?s"
-                    ncit = len(result.search_results)
+                    ncit = len(result.searched_sources)
                     print(f"OK ({latency}, {ncit} sources) -> {path}{db_suffix}")
                 if result.usage:
                     stats[provider]["tokens"] += result.usage.total_tokens or 0

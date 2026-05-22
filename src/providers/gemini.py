@@ -1,5 +1,5 @@
 """Gemini adapter — google-genai SDK with google_search grounding."""
-from __future__ import annotations
+from urllib import response
 import time
 import os
 import sys
@@ -21,7 +21,6 @@ MODEL = "gemini-3.1-pro-preview"
 class GeminiSchema(BaseModel):
     query: str = ""
     answer: str  # required — no default so response_schema forces the model to fill it
-    citations: list[str] = []
     source_selection_justification: str = ""
     location: str = ""
     copyright_subject_matter: str = ""
@@ -173,40 +172,53 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
         # response.parsed is auto-populated by the SDK when response_schema is set
         structured: GeminiSchema | None = response.parsed
         if structured is not None:
-            base.update(structured.model_dump(exclude={"query", "answer", "citations"}))
+            base.update(structured.model_dump(exclude={"query", "answer"}))
             base["answer"] = structured.answer
 
         # --- Build search_results: grounding_chunks first, fall back to citations ---
-        seen_urls: set[str] = set()
-        search_results: list[Search_Result] = []
-
         grounding_meta = getattr(candidate0, "grounding_metadata", None) if candidate0 else None
         chunks = list(getattr(grounding_meta, "grounding_chunks", None) or [])
 
-        for chunk in chunks:
-            web = getattr(chunk, "web", None)
-            if web:
-                url = getattr(web, "uri", "") or ""
-                if url and url not in seen_urls:
-                    seen_urls.add(url)
-                    search_results.append(Search_Result(
-                        url=url,
-                        resolved_url=_resolve_redirect(url),
-                        title=getattr(web, "title", None),
-                    ))
+        searched_seen: set[str] = set()
+        searched_sources: list[Search_Result] = []
 
-        if structured and structured.citations:
-            for url in structured.citations:
-                if url and url not in seen_urls:
-                    seen_urls.add(url)
-                    title, date = _fetch_page_meta(url)
-                    if title is None:
-                        continue  # no title → likely hallucinated URL, discard
-                    search_results.append(Search_Result(
-                        url=url,
-                        title=title,
-                        published_date=date,
-                    ))
+        # map index → Search_Result, convenient for cited reuse
+        chunk_index_to_sr: dict[int, Search_Result] = {}
+
+        for i, chunk in enumerate(chunks):
+            web = getattr(chunk, "web", None)
+            if not web:
+                continue
+            url = getattr(web, "uri", "") or ""
+            if not url:
+                continue
+            
+            sr = Search_Result(
+                url=url,
+                resolved_url=_resolve_redirect(url),
+                title=getattr(web, "title", None),
+            )
+            chunk_index_to_sr[i] = sr 
+            
+            if url not in searched_seen:
+                searched_seen.add(url)
+                searched_sources.append(sr)
+
+        # --- Cited: 从 grounding_supports 反查 chunks ---
+        cited_seen: set[str] = set()
+        cited_sources: list[Search_Result] = []
+
+        supports = list(getattr(grounding_meta, "grounding_supports", None) or [])
+        for support in supports:
+            chunk_indices = getattr(support, "grounding_chunk_indices", None) or []
+            for idx in chunk_indices:
+                sr = chunk_index_to_sr.get(idx)
+                if sr is None:
+                    continue  # index 超范围，跳过
+                if sr.url in cited_seen:
+                    continue
+                cited_seen.add(sr.url)
+                cited_sources.append(sr)
 
         # --- Usage ---
         usage_meta = getattr(response, "usage_metadata", None)
@@ -221,7 +233,8 @@ def query(prompt: dict, attempt_no: int = 1) -> StandardResponse:
 
         return StandardResponse(
             **base,
-            search_results=search_results,
+            cited_sources=cited_sources,
+            searched_sources=searched_sources,
             usage=usage,
             latency_ms=latency_ms,
             raw=raw,
