@@ -5,7 +5,7 @@ Usage examples:
   python scripts/run.py --prompt iran-uk-war-neutral
   python scripts/run.py --prompt uk-elections-2026-left --provider perplexity openai gemini anthropic
   python scripts/run.py --topic uk-elections-2026 --provider gemini --repeat 3 --export
-  python scripts/run.py --all --provider perplexity --repeat 3 --export
+  python scripts/run.py --all --provider perplexity perplexity openai gemini anthropic --export
 """
 import argparse
 import sys

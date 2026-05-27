@@ -1,0 +1,228 @@
+# =============================================================================
+# Domain registry for LLM Audit source categorization
+# Place this file at project root (alongside prompts.yaml / system_prompts.yaml).
+# =============================================================================
+# Schema:
+#   categories:    human-readable definitions
+#   suffix_rules:  fallback rules applied when exact domain not found
+#   domains:       bare-domain → {category, country?, leaning?, outlet_type?}
+#
+# Conventions:
+#   - Bare domain only (no www., no scheme, no path). Add sister-domains
+#     (e.g. bbc.com + bbc.co.uk) as separate entries.
+#   - leaning vocabulary: left | centre-left | centre | centre-right | right
+#   - outlet_type:        national | regional | local | wire-service
+#   - Missing field = unknown (don't fabricate)
+#
+# Update workflow:
+#   1. Run `python scripts/analyze.py --date YYYY-MM-DD`
+#   2. Inspect `outputs/analysis_<date>/unknown_domains.csv`
+#   3. Add high-frequency unknowns here
+#   4. Re-run
+# =============================================================================
+
+categories:
+  mainstream-news-uk:
+    description: "UK national news outlets (broadsheet, tabloid, broadcaster)"
+  mainstream-news-intl:
+    description: "Non-UK mainstream news (US/EU/global wire services)"
+  opinion-magazine:
+    description: "Political opinion magazines, current-affairs commentary"
+  thinktank-pollster:
+    description: "Think tanks, polling firms, policy research orgs"
+  government:
+    description: "Gov, devolved gov, parliament, regulators, electoral commission"
+  encyclopedia:
+    description: "Wikipedia and other encyclopedic references"
+  local-civic:
+    description: "Local council websites, regional news, community media"
+  social-media:
+    description: "YouTube, X/Twitter, TikTok, Reddit, Facebook, etc."
+  aggregator:
+    description: "News aggregators, fact-checkers, vote trackers"
+  academic:
+    description: "University publications, academic journals"
+  legal-professional:
+    description: "Legal commentary, professional/trade publications"
+  other:
+    description: "Uncategorized — triage into above"
+
+# -----------------------------------------------------------------------------
+# Suffix rules — applied AFTER exact match fails. First match wins.
+# -----------------------------------------------------------------------------
+suffix_rules:
+  - suffix: ".gov.uk"
+    category: government
+    country: GB
+  - suffix: ".parliament.uk"
+    category: government
+    country: GB
+  - suffix: ".police.uk"
+    category: government
+    country: GB
+  - suffix: ".nhs.uk"
+    category: government
+    country: GB
+  - suffix: ".ac.uk"
+    category: academic
+    country: GB
+  - suffix: ".edu"
+    category: academic
+  - suffix: "wikipedia.org"
+    category: encyclopedia
+  - suffix: "wikimedia.org"
+    category: encyclopedia
+
+# -----------------------------------------------------------------------------
+# Domain registry
+# -----------------------------------------------------------------------------
+domains:
+
+  # ─── UK Mainstream News: broadsheets ──────────────────────────────────────
+  theguardian.com:        {category: mainstream-news-uk, country: GB, leaning: centre-left,  outlet_type: national}
+  guardian.co.uk:         {category: mainstream-news-uk, country: GB, leaning: centre-left,  outlet_type: national}
+  observer.co.uk:         {category: mainstream-news-uk, country: GB, leaning: centre-left,  outlet_type: national}
+  ft.com:                 {category: mainstream-news-uk, country: GB, leaning: centre,       outlet_type: national}
+  telegraph.co.uk:        {category: mainstream-news-uk, country: GB, leaning: centre-right, outlet_type: national}
+  thetimes.co.uk:         {category: mainstream-news-uk, country: GB, leaning: centre-right, outlet_type: national}
+  thetimes.com:           {category: mainstream-news-uk, country: GB, leaning: centre-right, outlet_type: national}
+  independent.co.uk:      {category: mainstream-news-uk, country: GB, leaning: centre-left,  outlet_type: national}
+  the-independent.com:    {category: mainstream-news-uk, country: GB, leaning: centre-left,  outlet_type: national}
+  inews.co.uk:            {category: mainstream-news-uk, country: GB, leaning: centre,       outlet_type: national}
+
+  # ─── UK Mainstream News: tabloids / mid-market ────────────────────────────
+  dailymail.co.uk:        {category: mainstream-news-uk, country: GB, leaning: right,        outlet_type: national}
+  thisismoney.co.uk:      {category: mainstream-news-uk, country: GB, leaning: right,        outlet_type: national}
+  mirror.co.uk:           {category: mainstream-news-uk, country: GB, leaning: centre-left,  outlet_type: national}
+  express.co.uk:          {category: mainstream-news-uk, country: GB, leaning: right,        outlet_type: national}
+  thesun.co.uk:           {category: mainstream-news-uk, country: GB, leaning: right,        outlet_type: national}
+  thesun.com:             {category: mainstream-news-uk, country: GB, leaning: right,        outlet_type: national}
+  metro.co.uk:            {category: mainstream-news-uk, country: GB, leaning: centre,       outlet_type: national}
+  standard.co.uk:         {category: mainstream-news-uk, country: GB, leaning: centre,       outlet_type: national}
+  cityam.com:             {category: mainstream-news-uk, country: GB, leaning: centre-right, outlet_type: national}
+
+  # ─── UK Mainstream News: broadcasters ─────────────────────────────────────
+  bbc.com:                {category: mainstream-news-uk, country: GB, leaning: centre,       outlet_type: national}
+  bbc.co.uk:              {category: mainstream-news-uk, country: GB, leaning: centre,       outlet_type: national}
+  itv.com:                {category: mainstream-news-uk, country: GB, leaning: centre,       outlet_type: national}
+  sky.com:                {category: mainstream-news-uk, country: GB, leaning: centre,       outlet_type: national}
+  news.sky.com:           {category: mainstream-news-uk, country: GB, leaning: centre,       outlet_type: national}
+  channel4.com:           {category: mainstream-news-uk, country: GB, leaning: centre-left,  outlet_type: national}
+  gbnews.com:             {category: mainstream-news-uk, country: GB, leaning: right,        outlet_type: national}
+  talktv.co.uk:           {category: mainstream-news-uk, country: GB, leaning: right,        outlet_type: national}
+
+  # ─── UK Opinion magazines & political commentary ──────────────────────────
+  newstatesman.com:       {category: opinion-magazine, country: GB, leaning: centre-left}
+  spectator.co.uk:        {category: opinion-magazine, country: GB, leaning: right}
+  unherd.com:             {category: opinion-magazine, country: GB, leaning: centre-right}
+  opendemocracy.net:      {category: opinion-magazine, country: GB, leaning: left}
+  novaramedia.com:        {category: opinion-magazine, country: GB, leaning: left}
+  tribunemag.co.uk:       {category: opinion-magazine, country: GB, leaning: left}
+  morningstaronline.co.uk: {category: opinion-magazine, country: GB, leaning: left}
+  thecanary.co:           {category: opinion-magazine, country: GB, leaning: left}
+  bylinetimes.com:        {category: opinion-magazine, country: GB, leaning: centre-left}
+  conservativehome.com:   {category: opinion-magazine, country: GB, leaning: right}
+  reactionlife.com:       {category: opinion-magazine, country: GB, leaning: centre-right}
+  politicshome.com:       {category: opinion-magazine, country: GB, leaning: centre}
+  theweek.com:            {category: opinion-magazine, country: GB, leaning: centre}
+  prospectmagazine.co.uk: {category: opinion-magazine, country: GB, leaning: centre-left}
+  jacobin.com:            {category: opinion-magazine, country: US, leaning: left}
+  theconversation.com:    {category: opinion-magazine, leaning: centre}
+
+  # ─── Think tanks & Pollsters (UK) ─────────────────────────────────────────
+  instituteforgovernment.org.uk: {category: thinktank-pollster, country: GB, leaning: centre}
+  ifs.org.uk:             {category: thinktank-pollster, country: GB, leaning: centre}
+  niesr.ac.uk:            {category: thinktank-pollster, country: GB, leaning: centre}
+  resolutionfoundation.org: {category: thinktank-pollster, country: GB, leaning: centre-left}
+  kingsfund.org.uk:       {category: thinktank-pollster, country: GB, leaning: centre}
+  nuffieldtrust.org.uk:   {category: thinktank-pollster, country: GB, leaning: centre}
+  jrf.org.uk:             {category: thinktank-pollster, country: GB, leaning: centre-left}
+  smf.co.uk:              {category: thinktank-pollster, country: GB, leaning: centre}
+  fabians.org.uk:         {category: thinktank-pollster, country: GB, leaning: centre-left}
+  policyexchange.org.uk:  {category: thinktank-pollster, country: GB, leaning: centre-right}
+  cps.org.uk:             {category: thinktank-pollster, country: GB, leaning: right}
+  iea.org.uk:             {category: thinktank-pollster, country: GB, leaning: right}
+  adamsmith.org:          {category: thinktank-pollster, country: GB, leaning: right}
+  taxpayersalliance.com:  {category: thinktank-pollster, country: GB, leaning: right}
+  demos.co.uk:            {category: thinktank-pollster, country: GB, leaning: centre-left}
+  compassonline.org.uk:   {category: thinktank-pollster, country: GB, leaning: left}
+  electoral-reform.org.uk: {category: thinktank-pollster, country: GB, leaning: centre}
+  yougov.com:             {category: thinktank-pollster, country: GB}
+  yougov.co.uk:           {category: thinktank-pollster, country: GB}
+  ipsos.com:              {category: thinktank-pollster}
+  savanta.com:            {category: thinktank-pollster, country: GB}
+  surveation.com:         {category: thinktank-pollster, country: GB}
+  pollcheck.co.uk:        {category: thinktank-pollster, country: GB}
+  electoralcalculus.co.uk: {category: thinktank-pollster, country: GB}
+
+  # ─── International Mainstream News ────────────────────────────────────────
+  reuters.com:            {category: mainstream-news-intl, outlet_type: wire-service}
+  apnews.com:             {category: mainstream-news-intl, country: US, outlet_type: wire-service}
+  ap.org:                 {category: mainstream-news-intl, country: US, outlet_type: wire-service}
+  bloomberg.com:          {category: mainstream-news-intl, country: US, leaning: centre}
+  nytimes.com:            {category: mainstream-news-intl, country: US, leaning: centre-left}
+  washingtonpost.com:     {category: mainstream-news-intl, country: US, leaning: centre-left}
+  wsj.com:                {category: mainstream-news-intl, country: US, leaning: centre-right}
+  cnn.com:                {category: mainstream-news-intl, country: US, leaning: centre-left}
+  npr.org:                {category: mainstream-news-intl, country: US, leaning: centre-left}
+  foxnews.com:            {category: mainstream-news-intl, country: US, leaning: right}
+  aljazeera.com:          {category: mainstream-news-intl, leaning: centre-left}
+  france24.com:           {category: mainstream-news-intl, country: FR}
+  lemonde.fr:             {category: mainstream-news-intl, country: FR, leaning: centre-left}
+  lefigaro.fr:            {category: mainstream-news-intl, country: FR, leaning: centre-right}
+  elpais.com:             {category: mainstream-news-intl, country: ES, leaning: centre-left}
+  spiegel.de:             {category: mainstream-news-intl, country: DE, leaning: centre-left}
+  faz.net:                {category: mainstream-news-intl, country: DE, leaning: centre-right}
+  dw.com:                 {category: mainstream-news-intl, country: DE}
+  euronews.com:           {category: mainstream-news-intl}
+  politico.eu:            {category: mainstream-news-intl, leaning: centre}
+  politico.com:           {category: mainstream-news-intl, country: US, leaning: centre}
+
+  # ─── Local / Regional UK News ─────────────────────────────────────────────
+  liverpoolecho.co.uk:        {category: local-civic, country: GB, outlet_type: regional}
+  manchestereveningnews.co.uk: {category: local-civic, country: GB, outlet_type: regional}
+  birminghammail.co.uk:       {category: local-civic, country: GB, outlet_type: regional}
+  yorkshirepost.co.uk:        {category: local-civic, country: GB, outlet_type: regional}
+  thescotsman.com:            {category: local-civic, country: GB, outlet_type: regional}
+  heraldscotland.com:         {category: local-civic, country: GB, outlet_type: regional}
+  glasgowlive.co.uk:          {category: local-civic, country: GB, outlet_type: regional}
+  walesonline.co.uk:          {category: local-civic, country: GB, outlet_type: regional}
+  belfasttelegraph.co.uk:     {category: local-civic, country: GB, outlet_type: regional}
+  belfastlive.co.uk:          {category: local-civic, country: GB, outlet_type: regional}
+  bristolpost.co.uk:          {category: local-civic, country: GB, outlet_type: regional}
+  nottinghampost.com:         {category: local-civic, country: GB, outlet_type: regional}
+  cambridge-news.co.uk:       {category: local-civic, country: GB, outlet_type: regional}
+  onlondon.co.uk:             {category: local-civic, country: GB, outlet_type: regional}
+  mylondon.news:              {category: local-civic, country: GB, outlet_type: regional}
+
+  # ─── Aggregators / Trackers / Fact-checkers ───────────────────────────────
+  fullfact.org:           {category: aggregator, country: GB}
+  britainelects.com:      {category: aggregator, country: GB}
+  ukpollingreport.co.uk:  {category: aggregator, country: GB}
+  whatukthinks.org:       {category: aggregator, country: GB}
+
+  # ─── Social Media ─────────────────────────────────────────────────────────
+  youtube.com:            {category: social-media}
+  youtu.be:               {category: social-media}
+  twitter.com:            {category: social-media}
+  x.com:                  {category: social-media}
+  tiktok.com:             {category: social-media}
+  reddit.com:             {category: social-media}
+  facebook.com:           {category: social-media}
+  instagram.com:          {category: social-media}
+  linkedin.com:           {category: social-media}
+  threads.net:            {category: social-media}
+  bsky.app:               {category: social-media}
+
+  # ─── Encyclopedia (also covered by suffix rule) ───────────────────────────
+  en.wikipedia.org:       {category: encyclopedia}
+  britannica.com:         {category: encyclopedia}
+  wikidata.org:           {category: encyclopedia}
+
+  # ─── Legal / Professional ─────────────────────────────────────────────────
+  localgovernmentlawyer.co.uk: {category: legal-professional, country: GB}
+  lawgazette.co.uk:       {category: legal-professional, country: GB}
+  lawsociety.org.uk:      {category: legal-professional, country: GB}
+  bailii.org:             {category: legal-professional, country: GB}
+  moneyweek.com:          {category: legal-professional, country: GB}
+  internationalviewpoint.org: {category: opinion-magazine, leaning: left}

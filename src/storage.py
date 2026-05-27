@@ -106,7 +106,7 @@ def build_db_records(response: StandardResponse) -> dict[str, Any]:
             "snippet": sr.snippet,
             "published_date": sr.published_date,
         }
-        for idx, sr in enumerate(response.search_results, start=1)
+        for idx, sr in enumerate(response.searched_sources, start=1)
     ]
     return {
         "query": query,
@@ -307,7 +307,7 @@ def list_runs(
 
 def _format_search_results(response: StandardResponse) -> str:
     lines = []
-    for sr in response.search_results:
+    for sr in response.searched_sources:
         display_url = sr.resolved_url or sr.url
         parts = [display_url]
         if sr.title:
@@ -335,7 +335,7 @@ def _to_row(r: StandardResponse) -> dict:
         "fair_dealing":                 r.fair_dealing,
         "licensing":                    r.licensing,
         "search_results":               _format_search_results(r),
-        "n_sources":                    len(r.search_results),
+        "n_sources":                    len(r.searched_sources),
         "reasoning_steps":              r.reasoning_steps,
         "usage_prompt_tokens":          r.usage.prompt_tokens if r.usage else None,
         "usage_completion_tokens":      r.usage.completion_tokens if r.usage else None,
