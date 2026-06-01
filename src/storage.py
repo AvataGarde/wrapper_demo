@@ -41,7 +41,7 @@ RUN_FIELD_ORDER = (
 QUERY_FIELD_ORDER = ("id", "topic", "framing", "text")
 
 
-CITATION_FIELD_ORDER = (
+SOURCE_FIELD_ORDER = (
     "rank",
     "url",
     "resolved_url",
@@ -97,10 +97,10 @@ def build_db_records(response: StandardResponse) -> dict[str, Any]:
         "error": response.error,
     }
     answer = {field: getattr(response, field) for field in STRUCTURED_ANSWER_FIELDS}
-    def _make_citation(sr, idx: int, source_type: str) -> dict:
+
+    def _sr_to_dict(sr, idx: int) -> dict:
         return {
             "rank": idx,
-            "source_type": source_type,
             "url": sr.url,
             "resolved_url": sr.resolved_url,
             "title": sr.title,
@@ -108,19 +108,15 @@ def build_db_records(response: StandardResponse) -> dict[str, Any]:
             "published_date": sr.published_date,
         }
 
-    citations = [
-        _make_citation(sr, idx, "searched")
-        for idx, sr in enumerate(response.searched_sources, start=1)
-    ] + [
-        _make_citation(sr, idx, "cited")
-        for idx, sr in enumerate(response.cited_sources, start=1)
-    ]
+    searched_sources = [_sr_to_dict(sr, idx) for idx, sr in enumerate(response.searched_sources, start=1)]
+    cited_sources = [_sr_to_dict(sr, idx) for idx, sr in enumerate(response.cited_sources, start=1)]
     return {
         "query": query,
         "run": run,
         "answer": answer,
         "reasoning_steps": _split_reasoning_steps(response.reasoning_steps),
-        "citations": citations,
+        "searched_sources": searched_sources,
+        "cited_sources": cited_sources,
         "raw_response": response.raw,
     }
 
@@ -218,23 +214,26 @@ def save_to_db(response: StandardResponse, conn=None) -> int:
                     (run_id, step["step_no"], step["content"]),
                 )
 
-            cur.execute("DELETE FROM citations WHERE run_id = %s", (run_id,))
-            for citation in records["citations"]:
+            cur.execute("DELETE FROM searched_sources WHERE run_id = %s", (run_id,))
+            for src in records["searched_sources"]:
                 cur.execute(
                     """
-                    INSERT INTO citations (run_id, source_type, url, resolved_url, title, snippet, published_date, rank)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO searched_sources (run_id, url, resolved_url, title, snippet, published_date, rank)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
-                    (
-                        run_id,
-                        citation["source_type"],
-                        citation["url"],
-                        citation["resolved_url"],
-                        citation["title"],
-                        citation["snippet"],
-                        citation["published_date"],
-                        citation["rank"],
-                    ),
+                    (run_id, src["url"], src["resolved_url"], src["title"],
+                     src["snippet"], src["published_date"], src["rank"]),
+                )
+
+            cur.execute("DELETE FROM cited_sources WHERE run_id = %s", (run_id,))
+            for src in records["cited_sources"]:
+                cur.execute(
+                    """
+                    INSERT INTO cited_sources (run_id, url, resolved_url, title, snippet, published_date, rank)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (run_id, src["url"], src["resolved_url"], src["title"],
+                     src["snippet"], src["published_date"], src["rank"]),
                 )
         connection.commit()
         return run_id

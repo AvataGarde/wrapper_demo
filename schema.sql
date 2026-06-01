@@ -54,10 +54,9 @@ CREATE TABLE IF NOT EXISTS reasoning_steps (
 
 CREATE INDEX IF NOT EXISTS idx_reasoning_steps_run_id ON reasoning_steps(run_id);
 
-CREATE TABLE IF NOT EXISTS citations (
+CREATE TABLE IF NOT EXISTS searched_sources (
     id SERIAL PRIMARY KEY,
     run_id INT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-    source_type TEXT NOT NULL DEFAULT 'searched',
     url TEXT,
     resolved_url TEXT,
     title TEXT,
@@ -67,10 +66,23 @@ CREATE TABLE IF NOT EXISTS citations (
     embedding vector(384)
 );
 
-CREATE INDEX IF NOT EXISTS idx_citations_run_id ON citations(run_id);
-CREATE INDEX IF NOT EXISTS idx_citations_url ON citations(url);
--- Add source_type to pre-existing databases
-ALTER TABLE citations ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'searched';
+CREATE INDEX IF NOT EXISTS idx_searched_sources_run_id ON searched_sources(run_id);
+CREATE INDEX IF NOT EXISTS idx_searched_sources_url ON searched_sources(url);
+
+CREATE TABLE IF NOT EXISTS cited_sources (
+    id SERIAL PRIMARY KEY,
+    run_id INT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    url TEXT,
+    resolved_url TEXT,
+    title TEXT,
+    snippet TEXT,
+    published_date TEXT,
+    rank INT,
+    embedding vector(384)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cited_sources_run_id ON cited_sources(run_id);
+CREATE INDEX IF NOT EXISTS idx_cited_sources_url ON cited_sources(url);
 
 CREATE TABLE IF NOT EXISTS source_metrics (
     id SERIAL PRIMARY KEY,

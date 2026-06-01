@@ -84,10 +84,9 @@ def test_build_db_records_maps_standard_response_into_relational_rows():
         {"step_no": 1, "content": "step one"},
         {"step_no": 2, "content": "step two"},
     ]
-    assert records["citations"] == [
+    assert records["searched_sources"] == [
         {
             "rank": 1,
-            "source_type": "searched",
             "url": "https://example.com/a",
             "resolved_url": "https://example.com/final-a",
             "title": "Example A",
@@ -96,16 +95,16 @@ def test_build_db_records_maps_standard_response_into_relational_rows():
         },
         {
             "rank": 2,
-            "source_type": "searched",
             "url": "https://example.com/b",
             "resolved_url": None,
             "title": "Example B",
             "snippet": None,
             "published_date": None,
         },
+    ]
+    assert records["cited_sources"] == [
         {
             "rank": 1,
-            "source_type": "cited",
             "url": "https://example.com/a",
             "resolved_url": "https://example.com/final-a",
             "title": "Example A",
