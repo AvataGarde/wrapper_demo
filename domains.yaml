@@ -201,6 +201,15 @@ domains:
   ukpollingreport.co.uk:  {category: aggregator, country: GB}
   whatukthinks.org:       {category: aggregator, country: GB}
 
+  # ─── Government (specific entries for non-.gov.uk domains) ────────────────
+  electoralcommission.org.uk: {category: government, country: GB}
+  parliament.uk:          {category: government, country: GB}
+  hansard.parliament.uk:  {category: government, country: GB}
+  ons.gov.uk:             {category: government, country: GB}
+  bankofengland.co.uk:    {category: government, country: GB}
+  judiciary.uk:           {category: government, country: GB}
+  judicial.uk:            {category: government, country: GB}
+
   # ─── Social Media ─────────────────────────────────────────────────────────
   youtube.com:            {category: social-media}
   youtu.be:               {category: social-media}

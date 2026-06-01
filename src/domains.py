@@ -91,9 +91,16 @@ def get_metadata(url_or_domain: str) -> dict[str, Any]:
             return meta
     
     # 3. Suffix rules
+    # A suffix ".gov.uk" matches both "lewisham.gov.uk" (ends with the suffix
+    # including the dot) and "gov.uk" itself (equals the suffix without the
+    # leading dot). The leading dot is just a convention to make rules read
+    # naturally; we treat both forms as matches.
     for rule in registry.get("suffix_rules", []) or []:
         suffix = rule.get("suffix", "")
-        if suffix and domain.endswith(suffix):
+        if not suffix:
+            continue
+        bare = suffix.lstrip(".")
+        if domain.endswith(suffix) or domain == bare:
             meta = {k: v for k, v in rule.items() if k != "suffix"}
             meta["_matched_via"] = f"suffix:{suffix}"
             return meta
@@ -148,6 +155,7 @@ if __name__ == "__main__":
         "https://en.wikipedia.org/wiki/Foo",
         "https://www.unknownsite-xyz.com/page",
         "bbc.co.uk",
+        "gov.uk",
     ]
     for u in test_urls:
         meta = get_metadata(u)
