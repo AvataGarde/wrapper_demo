@@ -57,6 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_reasoning_steps_run_id ON reasoning_steps(run_id)
 CREATE TABLE IF NOT EXISTS citations (
     id SERIAL PRIMARY KEY,
     run_id INT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    source_type TEXT NOT NULL DEFAULT 'searched',
     url TEXT,
     resolved_url TEXT,
     title TEXT,
@@ -68,6 +69,8 @@ CREATE TABLE IF NOT EXISTS citations (
 
 CREATE INDEX IF NOT EXISTS idx_citations_run_id ON citations(run_id);
 CREATE INDEX IF NOT EXISTS idx_citations_url ON citations(url);
+-- Add source_type to pre-existing databases
+ALTER TABLE citations ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'searched';
 
 CREATE TABLE IF NOT EXISTS source_metrics (
     id SERIAL PRIMARY KEY,

@@ -97,16 +97,23 @@ def build_db_records(response: StandardResponse) -> dict[str, Any]:
         "error": response.error,
     }
     answer = {field: getattr(response, field) for field in STRUCTURED_ANSWER_FIELDS}
-    citations = [
-        {
+    def _make_citation(sr, idx: int, source_type: str) -> dict:
+        return {
             "rank": idx,
+            "source_type": source_type,
             "url": sr.url,
             "resolved_url": sr.resolved_url,
             "title": sr.title,
             "snippet": sr.snippet,
             "published_date": sr.published_date,
         }
+
+    citations = [
+        _make_citation(sr, idx, "searched")
         for idx, sr in enumerate(response.searched_sources, start=1)
+    ] + [
+        _make_citation(sr, idx, "cited")
+        for idx, sr in enumerate(response.cited_sources, start=1)
     ]
     return {
         "query": query,
@@ -215,11 +222,12 @@ def save_to_db(response: StandardResponse, conn=None) -> int:
             for citation in records["citations"]:
                 cur.execute(
                     """
-                    INSERT INTO citations (run_id, url, resolved_url, title, snippet, published_date, rank)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO citations (run_id, source_type, url, resolved_url, title, snippet, published_date, rank)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         run_id,
+                        citation["source_type"],
                         citation["url"],
                         citation["resolved_url"],
                         citation["title"],

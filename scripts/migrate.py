@@ -33,6 +33,13 @@ def parse_args() -> argparse.Namespace:
 def resolve_paths(args: argparse.Namespace) -> list[str]:
     if args.paths:
         return [str(Path(path).resolve()) for path in args.paths]
+    if args.date:
+        date_path = Path(args.date)
+        # Accept absolute paths or paths that contain a separator (e.g. D:\...\2026-05-27)
+        if date_path.is_absolute() or (
+            date_path.exists() and date_path.is_dir()
+        ):
+            return sorted(str(f) for f in date_path.glob("*.json"))
     return list_runs(date=args.date, provider=args.provider)
 
 

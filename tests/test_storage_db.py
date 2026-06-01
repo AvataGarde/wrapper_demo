@@ -19,7 +19,7 @@ def test_build_db_records_maps_standard_response_into_relational_rows():
         fair_dealing="Possible",
         licensing="Unknown",
         reasoning_steps="step one\nstep two",
-        search_results=[
+        searched_sources=[
             Search_Result(
                 url="https://example.com/a",
                 resolved_url="https://example.com/final-a",
@@ -30,6 +30,15 @@ def test_build_db_records_maps_standard_response_into_relational_rows():
             Search_Result(
                 url="https://example.com/b",
                 title="Example B",
+            ),
+        ],
+        cited_sources=[
+            Search_Result(
+                url="https://example.com/a",
+                resolved_url="https://example.com/final-a",
+                title="Example A",
+                snippet="Snippet A",
+                published_date="2026-05-10",
             ),
         ],
         usage=Usage(
@@ -78,6 +87,7 @@ def test_build_db_records_maps_standard_response_into_relational_rows():
     assert records["citations"] == [
         {
             "rank": 1,
+            "source_type": "searched",
             "url": "https://example.com/a",
             "resolved_url": "https://example.com/final-a",
             "title": "Example A",
@@ -86,11 +96,21 @@ def test_build_db_records_maps_standard_response_into_relational_rows():
         },
         {
             "rank": 2,
+            "source_type": "searched",
             "url": "https://example.com/b",
             "resolved_url": None,
             "title": "Example B",
             "snippet": None,
             "published_date": None,
+        },
+        {
+            "rank": 1,
+            "source_type": "cited",
+            "url": "https://example.com/a",
+            "resolved_url": "https://example.com/final-a",
+            "title": "Example A",
+            "snippet": "Snippet A",
+            "published_date": "2026-05-10",
         },
     ]
     assert records["raw_response"] == {"id": "raw-1"}
